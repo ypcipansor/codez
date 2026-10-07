@@ -8,11 +8,11 @@ use crate::state::AppState;
 pub(super) fn package_routes() -> Router<AppState> {
     Router::new()
         .route(
-            "/api/v1/packages/:owner",
+            "/api/v1/packages/{owner}",
             get(list_packages).post(upload_package),
         )
         .route(
-            "/api/v1/packages/:owner/:type/:name/:version",
+            "/api/v1/packages/{owner}/{type}/{name}/{version}",
             get(get_package_detail).delete(delete_package),
         )
 }
