@@ -1,7 +1,8 @@
-use crate::api::{api_url, get, get_or, post_json, WRITE_ERROR};
+use crate::api::{api_url, get, get_or, local_resource, post_json, WRITE_ERROR};
 use crate::components::RepoNav;
-use leptos::*;
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::*;
 use shared::{
     CreateDiscussionCommentOption, CreateDiscussionOption, Discussion, DiscussionComment,
 };
@@ -9,17 +10,17 @@ use shared::{
 #[component]
 pub fn DiscussionList() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let (show_create, set_show_create) = create_signal(false);
-    let (refresh, set_refresh) = create_signal(0);
-    let (new_title, set_new_title) = create_signal("".to_string());
-    let (new_body, set_new_body) = create_signal("".to_string());
-    let (new_category, set_new_category) = create_signal("General".to_string());
-    let (form_error, set_form_error) = create_signal(Option::<String>::None);
+    let (show_create, set_show_create) = signal(false);
+    let (refresh, set_refresh) = signal(0);
+    let (new_title, set_new_title) = signal("".to_string());
+    let (new_body, set_new_body) = signal("".to_string());
+    let (new_category, set_new_category) = signal("General".to_string());
+    let (form_error, set_form_error) = signal(Option::<String>::None);
 
-    let discussions = create_resource(
+    let discussions = local_resource(
         move || (owner(), repo_name(), refresh.get()),
         |(o, r, _)| async move {
             let url = api_url(&format!("/repos/{}/{}/discussions", o, r));
@@ -76,16 +77,16 @@ pub fn DiscussionList() -> impl IntoView {
                             <p class="form-error" role="alert">{msg}</p>
                         })}
                     </form>
-                }.into_view()
+                }.into_any()
             } else {
-                view! { <span></span> }.into_view()
+                view! { <span></span> }.into_any()
             }}
 
             <ul>
                 <Suspense fallback=move || view! { <li>"Loading discussions..."</li> }>
                     {move || discussions.get().map(|list| {
                         if list.is_empty() {
-                            view! { <li>"No discussions found."</li> }.into_view()
+                            view! { <li>"No discussions found."</li> }.into_any()
                         } else {
                             view! {
                                 <For each=move || list.clone() key=|d| d.id children=move |d| {
@@ -99,7 +100,7 @@ pub fn DiscussionList() -> impl IntoView {
                                         </li>
                                     }
                                 }/>
-                            }.into_view()
+                            }.into_any()
                         }
                     })}
                 </Suspense>
@@ -111,24 +112,23 @@ pub fn DiscussionList() -> impl IntoView {
 #[component]
 pub fn DiscussionDetail() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
     let id = move || {
         params.with(|params| {
             params
                 .get("id")
-                .cloned()
                 .unwrap_or_default()
                 .parse::<u64>()
                 .unwrap_or_default()
         })
     };
 
-    let (refresh_comments, set_refresh_comments) = create_signal(0);
-    let (new_comment_body, set_new_comment_body) = create_signal("".to_string());
-    let (comment_error, set_comment_error) = create_signal(Option::<String>::None);
+    let (refresh_comments, set_refresh_comments) = signal(0);
+    let (new_comment_body, set_new_comment_body) = signal("".to_string());
+    let (comment_error, set_comment_error) = signal(Option::<String>::None);
 
-    let discussion = create_resource(
+    let discussion = local_resource(
         move || (owner(), repo_name(), id()),
         |(o, r, i)| async move {
             let url = api_url(&format!("/repos/{}/{}/discussions/{}", o, r, i));
@@ -136,7 +136,7 @@ pub fn DiscussionDetail() -> impl IntoView {
         },
     );
 
-    let comments = create_resource(
+    let comments = local_resource(
         move || (owner(), repo_name(), id(), refresh_comments.get()),
         |(o, r, i, _)| async move {
             let url = api_url(&format!("/repos/{}/{}/discussions/{}/comments", o, r, i));
@@ -222,9 +222,9 @@ pub fn DiscussionDetail() -> impl IntoView {
                                         })}
                                     </form>
                                 </div>
-                            }.into_view()
+                            }.into_any()
                         },
-                        None => view! { <h3>"Discussion Not Found"</h3> }.into_view()
+                        None => view! { <h3>"Discussion Not Found"</h3> }.into_any()
                     })}
                 </Suspense>
             </div>

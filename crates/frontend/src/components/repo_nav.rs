@@ -1,6 +1,7 @@
-use crate::api::{get_or, post, post_json_resp, WRITE_ERROR};
-use leptos::*;
-use leptos_router::*;
+use crate::api::{get_or, local_resource, post, post_json_resp, WRITE_ERROR};
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::*;
 use shared::{RepoUserStatus, Repository};
 
 /// Shared invalidation trigger for repository data.
@@ -16,7 +17,7 @@ pub struct RepoRefresh(pub RwSignal<u32>);
 pub fn use_repo_refresh() -> RwSignal<u32> {
     use_context::<RepoRefresh>()
         .map(|r| r.0)
-        .unwrap_or_else(|| create_rw_signal(0))
+        .unwrap_or_else(|| RwSignal::new(0))
 }
 
 /// Shared repository chrome: the repository header (name + star/watch/fork
@@ -30,19 +31,19 @@ pub fn RepoNav() -> impl IntoView {
     let params = use_params_map();
     let navigate = use_navigate();
     let location = use_location();
-    let owner = move || params.with(|p| p.get("owner").cloned().unwrap_or_default());
-    let repo = move || params.with(|p| p.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|p| p.get("owner").unwrap_or_default());
+    let repo = move || params.with(|p| p.get("repo").unwrap_or_default());
     let base = move || format!("/repos/{}/{}", owner(), repo());
     let refresh = use_repo_refresh();
 
-    let repo_data = create_resource(
+    let repo_data = local_resource(
         move || (owner(), repo(), refresh.get()),
         |(o, r, _)| async move {
             get_or::<Option<Repository>>(&format!("/api/v1/repos/{}/{}", o, r), None).await
         },
     );
 
-    let status = create_resource(
+    let status = local_resource(
         move || (owner(), repo(), refresh.get()),
         |(o, r, _)| async move {
             get_or::<RepoUserStatus>(
@@ -56,7 +57,7 @@ pub fn RepoNav() -> impl IntoView {
         },
     );
 
-    let (action_error, set_action_error) = create_signal(Option::<String>::None);
+    let (action_error, set_action_error) = signal(Option::<String>::None);
     let bump = move || refresh.update(|n| *n += 1);
 
     // Star and watch are toggles: refreshing only after a confirmed 2xx keeps the

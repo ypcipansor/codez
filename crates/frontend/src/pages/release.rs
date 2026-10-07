@@ -1,16 +1,17 @@
-use crate::api::{delete, get, get_or, post, post_json, WRITE_ERROR};
+use crate::api::{delete, get, get_or, local_resource, post, post_json, WRITE_ERROR};
 use crate::components::RepoNav;
-use leptos::*;
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::*;
 use shared::{CreateReleaseOption, Release};
 
 #[component]
 pub fn ReleaseList() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let releases = create_resource(
+    let releases = local_resource(
         move || (owner(), repo_name()),
         |(o, r)| async move {
             get::<Vec<Release>>(&format!("/api/v1/repos/{}/{}/releases", o, r)).await
@@ -35,8 +36,8 @@ pub fn ReleaseList() -> impl IntoView {
                                         <div>
                                             <h4><a href=href>{r.name}</a></h4>
                                             <span class="badge badge-success">{r.tag_name}</span>
-                                            {if r.draft { view! { <span class="badge badge-neutral ml-1">"Draft"</span> }.into_view() } else { view! { <span></span> }.into_view() }}
-                                            {if r.prerelease { view! { <span class="badge badge-warning ml-1">"Pre-release"</span> }.into_view() } else { view! { <span></span> }.into_view() }}
+                                            {if r.draft { view! { <span class="badge badge-neutral ml-1">"Draft"</span> }.into_any() } else { view! { <span></span> }.into_any() }}
+                                            {if r.prerelease { view! { <span class="badge badge-warning ml-1">"Pre-release"</span> }.into_any() } else { view! { <span></span> }.into_any() }}
                                         </div>
                                         <div class="text-small text-muted">
                                             {r.created_at}
@@ -65,15 +66,15 @@ pub fn ReleaseList() -> impl IntoView {
 #[component]
 pub fn ReleaseDetail() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
-    let id = move || params.with(|params| params.get("id").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
+    let id = move || params.with(|params| params.get("id").unwrap_or_default());
 
     // Trigger to refresh assets after upload
-    let (trigger, set_trigger) = create_signal(0);
-    let (action_error, set_action_error) = create_signal(Option::<String>::None);
+    let (trigger, set_trigger) = signal(0);
+    let (action_error, set_action_error) = signal(Option::<String>::None);
 
-    let release = create_resource(
+    let release = local_resource(
         move || (owner(), repo_name(), id(), trigger.get()),
         |(o, r, i, _)| async move {
             get_or::<Option<Release>>(&format!("/api/v1/repos/{}/{}/releases/{}", o, r, i), None)
@@ -152,8 +153,8 @@ pub fn ReleaseDetail() -> impl IntoView {
                                 })}
                             </div>
                         </div>
-                    }.into_view(),
-                    _ => view! { <p>"Release not found"</p> }.into_view()
+                    }.into_any(),
+                    _ => view! { <p>"Release not found"</p> }.into_any()
                 }}
             </Suspense>
         </div>
@@ -163,15 +164,15 @@ pub fn ReleaseDetail() -> impl IntoView {
 #[component]
 pub fn ReleaseCreate() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let (tag, set_tag) = create_signal("".to_string());
-    let (name, set_name) = create_signal("".to_string());
-    let (body, set_body) = create_signal("".to_string());
-    let (draft, set_draft) = create_signal(false);
-    let (prerelease, set_prerelease) = create_signal(false);
-    let (form_error, set_form_error) = create_signal(Option::<String>::None);
+    let (tag, set_tag) = signal("".to_string());
+    let (name, set_name) = signal("".to_string());
+    let (body, set_body) = signal("".to_string());
+    let (draft, set_draft) = signal(false);
+    let (prerelease, set_prerelease) = signal(false);
+    let (form_error, set_form_error) = signal(Option::<String>::None);
 
     let on_submit = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();

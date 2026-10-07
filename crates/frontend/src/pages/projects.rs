@@ -1,7 +1,8 @@
-use crate::api::{get, get_or, post, post_json};
+use crate::api::{get, get_or, local_resource, post, post_json};
 use crate::components::RepoNav;
-use leptos::*;
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::*;
 use shared::{
     CreateProjectCardOption, CreateProjectColumnOption, CreateProjectOption, Issue, Project,
     ProjectCard, ProjectColumn,
@@ -10,15 +11,15 @@ use shared::{
 #[component]
 pub fn ProjectList() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let (show_create, set_show_create) = create_signal(false);
-    let (new_title, set_new_title) = create_signal("".to_string());
-    let (new_desc, set_new_desc) = create_signal("".to_string());
-    let (form_error, set_form_error) = create_signal(Option::<String>::None);
+    let (show_create, set_show_create) = signal(false);
+    let (new_title, set_new_title) = signal("".to_string());
+    let (new_desc, set_new_desc) = signal("".to_string());
+    let (form_error, set_form_error) = signal(Option::<String>::None);
 
-    let projects = create_resource(
+    let projects = local_resource(
         move || (owner(), repo_name(), show_create.get()), // refresh on create toggle/submit
         |(o, r, _)| async move {
             get::<Vec<Project>>(&format!("/api/v1/repos/{}/{}/projects", o, r)).await
@@ -69,16 +70,16 @@ pub fn ProjectList() -> impl IntoView {
                             <p class="form-error" role="alert">{msg}</p>
                         })}
                     </form>
-                }.into_view()
+                }.into_any()
             } else {
-                view! { <span></span> }.into_view()
+                view! { <span></span> }.into_any()
             }}
 
             <ul>
                 <Suspense fallback=move || view! { <li>"Loading projects..."</li> }>
                     {move || projects.get().map(|list| {
                          if list.is_empty() {
-                            view! { <li>"No projects found."</li> }.into_view()
+                            view! { <li>"No projects found."</li> }.into_any()
                         } else {
                             view! {
                                 <For each=move || list.clone() key=|p| p.id children=move |p| {
@@ -90,7 +91,7 @@ pub fn ProjectList() -> impl IntoView {
                                         </li>
                                     }
                                 }/>
-                            }.into_view()
+                            }.into_any()
                         }
                     })}
                 </Suspense>
@@ -102,23 +103,22 @@ pub fn ProjectList() -> impl IntoView {
 #[component]
 pub fn ProjectDetail() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
     let id = move || {
         params.with(|params| {
             params
                 .get("id")
-                .cloned()
                 .unwrap_or_default()
                 .parse::<u64>()
                 .unwrap_or_default()
         })
     };
 
-    let (refresh, set_refresh) = create_signal(0);
-    let (board_error, set_board_error) = create_signal(Option::<String>::None);
+    let (refresh, set_refresh) = signal(0);
+    let (board_error, set_board_error) = signal(Option::<String>::None);
 
-    let project = create_resource(
+    let project = local_resource(
         move || (owner(), repo_name(), id(), refresh.get()),
         |(o, r, i, _)| async move {
             get_or::<Option<Project>>(&format!("/api/v1/repos/{}/{}/projects/{}", o, r, i), None)
@@ -126,7 +126,7 @@ pub fn ProjectDetail() -> impl IntoView {
         },
     );
 
-    let columns = create_resource(
+    let columns = local_resource(
         move || (owner(), repo_name(), id(), refresh.get()),
         |(o, r, i, _)| async move {
             get::<Vec<ProjectColumn>>(&format!("/api/v1/repos/{}/{}/projects/{}/columns", o, r, i))
@@ -134,7 +134,7 @@ pub fn ProjectDetail() -> impl IntoView {
         },
     );
 
-    let (new_col_title, set_new_col_title) = create_signal("".to_string());
+    let (new_col_title, set_new_col_title) = signal("".to_string());
 
     let on_add_column = move |_| {
         let o = owner();
@@ -198,9 +198,9 @@ pub fn ProjectDetail() -> impl IntoView {
                                     {if is_closed { "Reopen Project" } else { "Close Project" }}
                                 </button>
                             </div>
-                        }.into_view()
+                        }.into_any()
                     },
-                    None => view! { <h3>"Project Not Found"</h3> }.into_view()
+                    None => view! { <h3>"Project Not Found"</h3> }.into_any()
                 })}
             </Suspense>
 
@@ -233,10 +233,10 @@ fn ProjectColumnView(
     _project_id: u64,
     _refresh_signal: WriteSignal<i32>,
 ) -> impl IntoView {
-    let (refresh_cards, set_refresh_cards) = create_signal(0);
-    let (new_card_content, set_new_card_content) = create_signal("".to_string());
-    let (issue_id_input, set_issue_id_input) = create_signal("".to_string());
-    let (card_error, set_card_error) = create_signal(Option::<String>::None);
+    let (refresh_cards, set_refresh_cards) = signal(0);
+    let (new_card_content, set_new_card_content) = signal("".to_string());
+    let (issue_id_input, set_issue_id_input) = signal("".to_string());
+    let (card_error, set_card_error) = signal(Option::<String>::None);
 
     let column_id = column.id;
     let o = repo_owner.clone();
@@ -244,7 +244,7 @@ fn ProjectColumnView(
 
     let o_cards = o.clone();
     let r_cards = r.clone();
-    let cards = create_resource(
+    let cards = local_resource(
         move || {
             (
                 o_cards.clone(),
@@ -264,7 +264,7 @@ fn ProjectColumnView(
 
     let o_issues = o.clone();
     let r_issues = r.clone();
-    let issues = create_resource(
+    let issues = local_resource(
         move || (o_issues.clone(), r_issues.clone()),
         move |(o, r)| async move {
             get::<Vec<Issue>>(&format!("/api/v1/repos/{}/{}/issues?state=open", o, r)).await
@@ -319,9 +319,9 @@ fn ProjectColumnView(
                             view! {
                                 <div class="card">
                                     {if let Some(link) = issue_link {
-                                        view! { <div class="text-accent">{link}</div> }.into_view()
+                                        view! { <div class="text-accent">{link}</div> }.into_any()
                                     } else {
-                                        view! { <span></span> }.into_view()
+                                        view! { <span></span> }.into_any()
                                     }}
                                     <div>{card.content.unwrap_or_default()}</div>
                                 </div>

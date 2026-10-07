@@ -1,26 +1,21 @@
 //! Repository wiki pages.
 
-use crate::api::{get, get_opt, get_or, post_json, put_json, WRITE_ERROR};
+use crate::api::{get, get_opt, get_or, local_resource, post_json, put_json, WRITE_ERROR};
 use crate::components::RepoNav;
-use leptos::*;
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::*;
 use shared::{CreateWikiPageOption, WikiPage};
 
 #[component]
 pub fn Wiki() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
-    let page_name = move || {
-        params.with(|params| {
-            params
-                .get("page_name")
-                .cloned()
-                .unwrap_or("Home".to_string())
-        })
-    };
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
+    let page_name =
+        move || params.with(|params| params.get("page_name").unwrap_or("Home".to_string()));
 
-    let wiki_page = create_resource(
+    let wiki_page = local_resource(
         move || (owner(), repo_name(), page_name()),
         move |(o, r, p)| async move {
             get_or::<Option<WikiPage>>(&format!("/api/v1/repos/{}/{}/wiki/pages/{}", o, r, p), None)
@@ -28,7 +23,7 @@ pub fn Wiki() -> impl IntoView {
         },
     );
 
-    let wiki_pages = create_resource(
+    let wiki_pages = local_resource(
         move || (owner(), repo_name()),
         |(o, r)| async move {
             get::<Vec<WikiPage>>(&format!("/api/v1/repos/{}/{}/wiki/pages", o, r)).await
@@ -65,18 +60,18 @@ pub fn Wiki() -> impl IntoView {
                                     <div class="wiki-content">
                                         <pre>{page.content}</pre>
                                     </div>
-                                }.into_view()
+                                }.into_any()
                             },
                             _ => {
                                 let p = page_name();
                                 view! {
                                     <div>
                                         <p>"Wiki page '" {p.clone()} "' not found."</p>
-                                        <a href=format!("/repos/{}/{}/wiki/pages/{}/edit", owner(), repo_name(), p)>
-                                            "Create " {p} " Page"
+                                        <a href=format!("/repos/{}/{}/wiki/pages/{}/edit", owner(), repo_name(), p.clone())>
+                                            "Create " {p.clone()} " Page"
                                         </a>
                                     </div>
-                                }.into_view()
+                                }.into_any()
                             }
                         }}
                     </Suspense>
@@ -89,24 +84,18 @@ pub fn Wiki() -> impl IntoView {
 #[component]
 pub fn WikiEdit() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
-    let page_name = move || {
-        params.with(|params| {
-            params
-                .get("page_name")
-                .cloned()
-                .unwrap_or("Home".to_string())
-        })
-    };
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
+    let page_name =
+        move || params.with(|params| params.get("page_name").unwrap_or("Home".to_string()));
 
-    let (content, set_content) = create_signal("".to_string());
-    let (message, set_message) = create_signal("".to_string());
-    let (is_new, set_is_new) = create_signal(true);
-    let (form_error, set_form_error) = create_signal(Option::<String>::None);
+    let (content, set_content) = signal("".to_string());
+    let (message, set_message) = signal("".to_string());
+    let (is_new, set_is_new) = signal(true);
+    let (form_error, set_form_error) = signal(Option::<String>::None);
 
     // Load existing content if available
-    let _ = create_resource(
+    let _ = local_resource(
         move || (owner(), repo_name(), page_name()),
         move |(o, r, p)| async move {
             if let Some(Some(page)) =

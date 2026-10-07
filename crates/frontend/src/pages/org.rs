@@ -1,6 +1,7 @@
-use crate::api::{get, get_or, post_json, put_json, WRITE_ERROR};
-use leptos::*;
-use leptos_router::*;
+use crate::api::{get, get_or, local_resource, post_json, put_json, WRITE_ERROR};
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::*;
 use shared::{
     AuditLog, CreateOrgOption, CreateTeamOption, OrgMember, Organization, Repository, Team,
     UpdateMemberRoleOption,
@@ -9,17 +10,17 @@ use shared::{
 #[component]
 pub fn OrgProfile() -> impl IntoView {
     let params = use_params_map();
-    let org_name = move || params.with(|params| params.get("org").cloned().unwrap_or_default());
+    let org_name = move || params.with(|params| params.get("org").unwrap_or_default());
 
-    let (active_tab, set_active_tab) = create_signal("repos".to_string());
-    let (refresh, set_refresh) = create_signal(0);
-    let (action_error, set_action_error) = create_signal(Option::<String>::None);
+    let (active_tab, set_active_tab) = signal("repos".to_string());
+    let (refresh, set_refresh) = signal(0);
+    let (action_error, set_action_error) = signal(Option::<String>::None);
 
-    let org = create_resource(org_name, |name| async move {
+    let org = local_resource(org_name, |name| async move {
         get_or::<Option<Organization>>(&format!("/api/v1/orgs/{}", name), None).await
     });
 
-    let repos = create_resource(
+    let repos = local_resource(
         move || (org_name(), active_tab.get(), refresh.get()),
         |(name, tab, _)| async move {
             if tab == "repos" {
@@ -30,7 +31,7 @@ pub fn OrgProfile() -> impl IntoView {
         },
     );
 
-    let teams = create_resource(
+    let teams = local_resource(
         move || (org_name(), active_tab.get(), refresh.get()),
         |(name, tab, _)| async move {
             if tab == "teams" {
@@ -41,7 +42,7 @@ pub fn OrgProfile() -> impl IntoView {
         },
     );
 
-    let members = create_resource(
+    let members = local_resource(
         move || (org_name(), active_tab.get(), refresh.get()),
         |(name, tab, _)| async move {
             if tab == "people" {
@@ -53,7 +54,7 @@ pub fn OrgProfile() -> impl IntoView {
     );
 
     // Create Team Logic
-    let (new_team_name, set_new_team_name) = create_signal("".to_string());
+    let (new_team_name, set_new_team_name) = signal("".to_string());
     let on_create_team = move |_| {
         let name = org_name();
         let payload = CreateTeamOption {
@@ -108,7 +109,7 @@ pub fn OrgProfile() -> impl IntoView {
                                             })}
                                         </Suspense>
                                     </ul>
-                                }.into_view(),
+                                }.into_any(),
                                 "people" => view! {
                                     <div>
                                         <h3>"Members & Role Management"</h3>
@@ -149,10 +150,10 @@ pub fn OrgProfile() -> impl IntoView {
                                             </Suspense>
                                         </ul>
                                     </div>
-                                }.into_view(),
+                                }.into_any(),
                                 "audit" => view! {
                                     <OrgAuditLogs org_name=org_name() />
-                                }.into_view(),
+                                }.into_any(),
                                 "teams" => view! {
                                     <div>
                                         <ul>
@@ -172,12 +173,12 @@ pub fn OrgProfile() -> impl IntoView {
                                             })}
                                         </div>
                                     </div>
-                                }.into_view(),
-                                _ => view! { <div></div> }.into_view()
+                                }.into_any(),
+                                _ => view! { <div></div> }.into_any()
                             }}
                         </div>
-                    }.into_view(),
-                    _ => view! { <h3>"Organization Not Found"</h3> }.into_view()
+                    }.into_any(),
+                    _ => view! { <h3>"Organization Not Found"</h3> }.into_any()
                 }}
             </Suspense>
         </div>
@@ -186,7 +187,7 @@ pub fn OrgProfile() -> impl IntoView {
 
 #[component]
 pub fn OrgAuditLogs(org_name: String) -> impl IntoView {
-    let logs = create_resource(
+    let logs = local_resource(
         move || org_name.clone(),
         |name| async move { get::<Vec<AuditLog>>(&format!("/api/v1/orgs/{}/audit-logs", name)).await },
     );
@@ -220,9 +221,9 @@ pub fn OrgAuditLogs(org_name: String) -> impl IntoView {
 
 #[component]
 pub fn CreateOrg() -> impl IntoView {
-    let (name, set_name) = create_signal("".to_string());
-    let (desc, set_desc) = create_signal("".to_string());
-    let (form_error, set_form_error) = create_signal(Option::<String>::None);
+    let (name, set_name) = signal("".to_string());
+    let (desc, set_desc) = signal("".to_string());
+    let (form_error, set_form_error) = signal(Option::<String>::None);
 
     let on_submit = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();

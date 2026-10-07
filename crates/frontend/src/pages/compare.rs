@@ -1,29 +1,30 @@
-use crate::api::{get, post_json_resp, WRITE_ERROR};
+use crate::api::{get, local_resource, post_json_resp, WRITE_ERROR};
 use crate::components::RepoNav;
-use leptos::*;
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::*;
 use shared::{Branch, CreatePullRequestOption, PullRequest};
 
 #[component]
 pub fn CompareView() -> impl IntoView {
     let params = use_params_map();
     let navigate = use_navigate();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let (base_branch, set_base_branch) = create_signal("main".to_string());
-    let (compare_branch, set_compare_branch) = create_signal("".to_string());
-    let (title, set_title) = create_signal("".to_string());
-    let (body, set_body) = create_signal("".to_string());
-    let (error_msg, set_error_msg) = create_signal(None::<String>);
+    let (base_branch, set_base_branch) = signal("main".to_string());
+    let (compare_branch, set_compare_branch) = signal("".to_string());
+    let (title, set_title) = signal("".to_string());
+    let (body, set_body) = signal("".to_string());
+    let (error_msg, set_error_msg) = signal(None::<String>);
 
-    let branches = create_resource(
+    let branches = local_resource(
         move || (owner(), repo_name()),
         |(o, r)| async move { get::<Vec<Branch>>(&format!("/api/v1/repos/{}/{}/branches", o, r)).await },
     );
 
     // Set default compare branch when branches load
-    create_effect(move |_| {
+    Effect::new(move |_| {
         if let Some(list) = branches.get() {
             if compare_branch.get().is_empty() && !list.is_empty() {
                 // Default to the last branch that isn't main, or just the last one
@@ -88,7 +89,7 @@ pub fn CompareView() -> impl IntoView {
                                 <select on:change=move |ev| set_base_branch.set(event_target_value(&ev))>
                                     <For each=move || list.clone() key=|b| b.name.clone() children=move |b| {
                                         let selected = b.name == base_branch.get();
-                                        view! { <option value={b.name.clone()} selected={selected}>{b.name}</option> }
+                                        view! { <option value={b.name.clone()} selected={selected}>{b.name.clone()}</option> }
                                     }/>
                                 </select>
                             </div>
@@ -98,7 +99,7 @@ pub fn CompareView() -> impl IntoView {
                                 <select on:change=move |ev| set_compare_branch.set(event_target_value(&ev))>
                                     <For each=move || list2.clone() key=|b| b.name.clone() children=move |b| {
                                         let selected = b.name == compare_branch.get();
-                                        view! { <option value={b.name.clone()} selected={selected}>{b.name}</option> }
+                                        view! { <option value={b.name.clone()} selected={selected}>{b.name.clone()}</option> }
                                     }/>
                                 </select>
                             </div>

@@ -1,10 +1,11 @@
-use crate::api::{delete, get, get_opt, WRITE_ERROR};
-use leptos::*;
+use crate::api::{delete, get, get_opt, local_resource, WRITE_ERROR};
+use leptos::prelude::*;
+use leptos::task::spawn_local;
 use shared::{AdminStats, SystemNotice, User};
 
 #[component]
 pub fn AdminDashboard() -> impl IntoView {
-    let stats = create_resource(
+    let stats = local_resource(
         || (),
         |_| async move { get_opt::<AdminStats>("/api/v1/admin/stats").await },
     );
@@ -22,8 +23,8 @@ pub fn AdminDashboard() -> impl IntoView {
                             <p>"Orgs: " {s.orgs}</p>
                             <p>"Issues: " {s.issues}</p>
                         </div>
-                    }.into_view(),
-                    _ => view! { <p>"No stats"</p> }.into_view()
+                    }.into_any(),
+                    _ => view! { <p>"No stats"</p> }.into_any()
                 }}
             </Suspense>
             <AdminNotices/>
@@ -33,10 +34,10 @@ pub fn AdminDashboard() -> impl IntoView {
 
 #[component]
 pub fn AdminUsers() -> impl IntoView {
-    let (refresh, set_refresh) = create_signal(0);
-    let (action_error, set_action_error) = create_signal(Option::<String>::None);
+    let (refresh, set_refresh) = signal(0);
+    let (action_error, set_action_error) = signal(Option::<String>::None);
 
-    let users = create_resource(
+    let users = local_resource(
         move || refresh.get(),
         |_| async move { get::<Vec<User>>("/api/v1/admin/users").await },
     );
@@ -89,7 +90,7 @@ pub fn AdminUsers() -> impl IntoView {
 
 #[component]
 pub fn AdminNotices() -> impl IntoView {
-    let notices = create_resource(
+    let notices = local_resource(
         || (),
         |_| async move { get::<Vec<SystemNotice>>("/api/v1/admin/notices").await },
     );

@@ -1,10 +1,11 @@
 //! Pull request list and detail components.
 
 use super::CommitStatusList;
-use crate::api::{get, get_opt, patch_json, post_json};
+use crate::api::{get, get_opt, local_resource, patch_json, post_json};
 use crate::components::RepoNav;
-use leptos::*;
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::*;
 use shared::{
     CreateReviewOption, DiffFile, MergePullRequestOption, PullRequest, Review,
     UpdatePullRequestOption,
@@ -13,10 +14,10 @@ use shared::{
 #[component]
 pub fn PullRequestList() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let pulls = create_resource(
+    let pulls = local_resource(
         move || (owner(), repo_name()),
         |(o, r)| async move {
             get::<Vec<PullRequest>>(&format!("/api/v1/repos/{}/{}/pulls", o, r)).await
@@ -47,32 +48,31 @@ pub fn PullRequestList() -> impl IntoView {
 #[component]
 pub fn PullRequestDetail() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
     let index = move || {
         params.with(|params| {
             params
                 .get("index")
-                .cloned()
                 .unwrap_or_default()
                 .parse::<u64>()
                 .unwrap_or_default()
         })
     };
 
-    let (merge_action, set_merge_action) = create_signal("merge".to_string());
-    let (trigger_refresh, set_trigger_refresh) = create_signal(0);
-    let (action_error, set_action_error) = create_signal(Option::<String>::None);
+    let (merge_action, set_merge_action) = signal("merge".to_string());
+    let (trigger_refresh, set_trigger_refresh) = signal(0);
+    let (action_error, set_action_error) = signal(Option::<String>::None);
 
     // Fetch PR details to display status, title, body etc.
-    let pull_request = create_resource(
+    let pull_request = local_resource(
         move || (owner(), repo_name(), index(), trigger_refresh.get()),
         |(o, r, i, _)| async move {
             get_opt::<PullRequest>(&format!("/api/v1/repos/{}/{}/pulls/{}", o, r, i)).await
         },
     );
 
-    let pr_files = create_resource(
+    let pr_files = local_resource(
         move || (owner(), repo_name(), index()),
         |(o, r, i)| async move {
             get::<Vec<DiffFile>>(&format!("/api/v1/repos/{}/{}/pulls/{}/files", o, r, i)).await
@@ -133,9 +133,9 @@ pub fn PullRequestDetail() -> impl IntoView {
         });
     };
 
-    let (is_editing, set_is_editing) = create_signal(false);
-    let (edit_title, set_edit_title) = create_signal("".to_string());
-    let (edit_body, set_edit_body) = create_signal("".to_string());
+    let (is_editing, set_is_editing) = signal(false);
+    let (edit_title, set_edit_title) = signal("".to_string());
+    let (edit_body, set_edit_body) = signal("".to_string());
 
     let on_start_edit = move |t: String, b: String| {
         set_edit_title.set(t);
@@ -172,14 +172,14 @@ pub fn PullRequestDetail() -> impl IntoView {
         });
     };
 
-    let reviews = create_resource(
+    let reviews = local_resource(
         move || (owner(), repo_name(), index(), trigger_refresh.get()),
         |(o, r, i, _)| async move {
             get::<Vec<Review>>(&format!("/api/v1/repos/{}/{}/pulls/{}/reviews", o, r, i)).await
         },
     );
 
-    let (review_body, set_review_body) = create_signal("".to_string());
+    let (review_body, set_review_body) = signal("".to_string());
 
     let on_submit_review = move |event: String| {
         let o = owner();
@@ -221,9 +221,9 @@ pub fn PullRequestDetail() -> impl IntoView {
                                 {if is_editing.get() {
                                     view! {
                                         <input type="text" prop:value=edit_title on:input=move |ev| set_edit_title.set(event_target_value(&ev)) class="input-title" />
-                                    }.into_view()
+                                    }.into_any()
                                 } else {
-                                    view! { <h3>"Pull Request #" {index} ": " {pr.title.clone()}</h3> }.into_view()
+                                    view! { <h3>"Pull Request #" {index} ": " {pr.title.clone()}</h3> }.into_any()
                                 }}
                                 <span class="state">{pr.state.clone()}</span>
                                 <span class="meta">" opened by " {pr.user.username}</span>
@@ -231,9 +231,9 @@ pub fn PullRequestDetail() -> impl IntoView {
                                     {if state_clone == "open" { "Close PR" } else { "Reopen PR" }}
                                 </button>
                                 {if !is_editing.get() {
-                                    view! { <button on:click=move |_| on_start_edit(title_clone.clone(), body_clone.clone()) class="ml-1">"Edit"</button> }.into_view()
+                                    view! { <button on:click=move |_| on_start_edit(title_clone.clone(), body_clone.clone()) class="ml-1">"Edit"</button> }.into_any()
                                 } else {
-                                     view! { <span></span> }.into_view()
+                                     view! { <span></span> }.into_any()
                                 }}
                             </div>
                             <div class="pr-body">
@@ -244,15 +244,15 @@ pub fn PullRequestDetail() -> impl IntoView {
                                             <button on:click=on_save_edit>"Save"</button>
                                             <button on:click=on_cancel_edit class="ml-1">"Cancel"</button>
                                         </div>
-                                    }.into_view()
+                                    }.into_any()
                                 } else {
-                                    view! { <p>{pr.body.clone().unwrap_or_default()}</p> }.into_view()
+                                    view! { <p>{pr.body.clone().unwrap_or_default()}</p> }.into_any()
                                 }}
                             </div>
                             <CommitStatusList owner=owner() repo=repo_name() sha=pr.head_sha.clone() />
                         }
-                    }.into_view(),
-                    _ => view! { <p>"Pull Request not found"</p> }.into_view()
+                    }.into_any(),
+                    _ => view! { <p>"Pull Request not found"</p> }.into_any()
                 }}
             </Suspense>
 
@@ -300,7 +300,7 @@ pub fn PullRequestDetail() -> impl IntoView {
                                                 "APPROVED" => "green",
                                                 "CHANGES_REQUESTED" => "red",
                                                 _ => "gray"
-                                            })>{r.state}</span>
+                                            })>{r.state.clone()}</span>
                                             " on " {r.created_at}
                                         </div>
                                         <div class="review-body">

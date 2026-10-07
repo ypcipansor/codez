@@ -1,9 +1,12 @@
 //! Repository settings, branches, webhooks, secrets and deploy keys.
 
-use crate::api::{get, get_then, patch_json, post, post_json, put_json, WRITE_ERROR};
+use crate::api::{
+    get, get_then, local_resource, patch_json, post, post_json, put_json, WRITE_ERROR,
+};
 use crate::components::RepoNav;
-use leptos::*;
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::*;
 use shared::{
     CreateHookOption, CreateKeyOption, CreateProtectedBranchOption, CreateSecretOption, DeployKey,
     LfsLock, ProtectedBranch, RepoSettingsOption, RepoTopicOptions, Secret, TransferRepoOption,
@@ -13,26 +16,26 @@ use shared::{
 #[component]
 pub fn RepoSettings() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let (desc, set_desc) = create_signal("".to_string());
-    let (website, set_website) = create_signal("".to_string());
-    let (default_branch, set_default_branch) = create_signal("main".to_string());
-    let (private, set_private) = create_signal(false);
-    let (rebase, set_rebase) = create_signal(true);
-    let (squash, set_squash) = create_signal(true);
-    let (merge, set_merge) = create_signal(true);
-    let (issues, set_issues) = create_signal(true);
-    let (wiki, set_wiki) = create_signal(true);
-    let (projects, set_projects) = create_signal(true);
+    let (desc, set_desc) = signal("".to_string());
+    let (website, set_website) = signal("".to_string());
+    let (default_branch, set_default_branch) = signal("main".to_string());
+    let (private, set_private) = signal(false);
+    let (rebase, set_rebase) = signal(true);
+    let (squash, set_squash) = signal(true);
+    let (merge, set_merge) = signal(true);
+    let (issues, set_issues) = signal(true);
+    let (wiki, set_wiki) = signal(true);
+    let (projects, set_projects) = signal(true);
 
-    let (transfer_to, set_transfer_to) = create_signal("".to_string());
-    let (topics, set_topics) = create_signal("".to_string());
-    let (save_error, set_save_error) = create_signal(Option::<String>::None);
+    let (transfer_to, set_transfer_to) = signal("".to_string());
+    let (topics, set_topics) = signal("".to_string());
+    let (save_error, set_save_error) = signal(Option::<String>::None);
 
     // Load initial settings
-    let _ = create_resource(
+    let _ = local_resource(
         move || (owner(), repo_name()),
         move |(o, r)| async move {
             get_then::<RepoSettingsOption, _>(
@@ -200,13 +203,13 @@ pub fn CreateProtectedBranch(
     repo: Signal<String>,
     on_success: Action<(), ()>,
 ) -> impl IntoView {
-    let (name, set_name) = create_signal(String::new());
-    let (enable_push, set_enable_push) = create_signal(false);
-    let (enable_force_push, set_enable_force_push) = create_signal(false);
-    let (status_checks, set_status_checks) = create_signal(String::new());
-    let (branch_error, set_branch_error) = create_signal(Option::<String>::None);
+    let (name, set_name) = signal(String::new());
+    let (enable_push, set_enable_push) = signal(false);
+    let (enable_force_push, set_enable_force_push) = signal(false);
+    let (status_checks, set_status_checks) = signal(String::new());
+    let (branch_error, set_branch_error) = signal(Option::<String>::None);
 
-    let create_action = create_action(move |_: &()| {
+    let create_action = Action::new_local(move |_: &()| {
         let name_val = name.get();
         let enable_push_val = enable_push.get();
         let enable_force_push_val = enable_force_push.get();
@@ -293,14 +296,14 @@ pub fn CreateProtectedBranch(
 #[component]
 pub fn ProtectedBranchList() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
     let owner_sig = Signal::derive(owner);
     let repo_sig = Signal::derive(repo_name);
 
-    let (refetch_trigger, set_refetch_trigger) = create_signal(0);
+    let (refetch_trigger, set_refetch_trigger) = signal(0);
 
-    let branches = create_resource(
+    let branches = local_resource(
         move || (owner(), repo_name(), refetch_trigger.get()),
         |(o, r, _)| async move {
             get::<Vec<ProtectedBranch>>(&format!("/api/v1/repos/{}/{}/branch_protections", o, r))
@@ -308,7 +311,7 @@ pub fn ProtectedBranchList() -> impl IntoView {
         },
     );
 
-    let on_success = create_action(move |_: &()| {
+    let on_success = Action::new_local(move |_: &()| {
         set_refetch_trigger.update(|v| *v += 1);
         async {}
     });
@@ -348,10 +351,10 @@ pub fn ProtectedBranchList() -> impl IntoView {
 #[component]
 pub fn LfsLockList() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let locks = create_resource(
+    let locks = local_resource(
         move || (owner(), repo_name()),
         |(o, r)| async move {
             get::<Vec<LfsLock>>(&format!("/api/v1/repos/{}/{}/git/lfs/locks", o, r)).await
@@ -378,13 +381,13 @@ pub fn LfsLockList() -> impl IntoView {
 #[component]
 pub fn WebhookList() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let (url, set_url) = create_signal("".to_string());
-    let (form_error, set_form_error) = create_signal(Option::<String>::None);
+    let (url, set_url) = signal("".to_string());
+    let (form_error, set_form_error) = signal(Option::<String>::None);
 
-    let hooks = create_resource(
+    let hooks = local_resource(
         move || (owner(), repo_name()),
         |(o, r)| async move { get::<Vec<Webhook>>(&format!("/api/v1/repos/{}/{}/hooks", o, r)).await },
     );
@@ -419,7 +422,7 @@ pub fn WebhookList() -> impl IntoView {
                             let hook_id = h.id;
                             let o = owner();
                             let r = repo_name();
-                            let deliveries = create_resource(
+                            let deliveries = local_resource(
                                 move || (o.clone(), r.clone(), hook_id),
                                 |(o, r, id)| async move {
                                     get::<Vec<WebhookDelivery>>(&format!("/api/v1/repos/{}/{}/hooks/{}/deliveries", o, r, id)).await
@@ -436,7 +439,7 @@ pub fn WebhookList() -> impl IntoView {
                                         <Suspense fallback=move || view! { <span>"..."</span> }>
                                             {move || deliveries.get().map(|list| {
                                                 if list.is_empty() {
-                                                    view! { <div>"No deliveries yet"</div> }.into_view()
+                                                    view! { <div>"No deliveries yet"</div> }.into_any()
                                                 } else {
                                                     view! {
                                                         <ul class="indent-list">
@@ -444,7 +447,7 @@ pub fn WebhookList() -> impl IntoView {
                                                                 view! { <li>{d.delivered_at} " - " {d.event} " - " {d.status} " (" {d.response_status} ")"</li> }
                                                             }/>
                                                         </ul>
-                                                    }.into_view()
+                                                    }.into_any()
                                                 }
                                             })}
                                         </Suspense>
@@ -470,14 +473,14 @@ pub fn WebhookList() -> impl IntoView {
 #[component]
 pub fn SecretList() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let (name, set_name) = create_signal("".to_string());
-    let (data, set_data) = create_signal("".to_string());
-    let (form_error, set_form_error) = create_signal(Option::<String>::None);
+    let (name, set_name) = signal("".to_string());
+    let (data, set_data) = signal("".to_string());
+    let (form_error, set_form_error) = signal(Option::<String>::None);
 
-    let secrets = create_resource(
+    let secrets = local_resource(
         move || (owner(), repo_name()),
         |(o, r)| async move { get::<Vec<Secret>>(&format!("/api/v1/repos/{}/{}/secrets", o, r)).await },
     );
@@ -530,14 +533,14 @@ pub fn SecretList() -> impl IntoView {
 #[component]
 pub fn DeployKeyList() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let (title, set_title) = create_signal("".to_string());
-    let (key, set_key) = create_signal("".to_string());
-    let (form_error, set_form_error) = create_signal(Option::<String>::None);
+    let (title, set_title) = signal("".to_string());
+    let (key, set_key) = signal("".to_string());
+    let (form_error, set_form_error) = signal(Option::<String>::None);
 
-    let keys = create_resource(
+    let keys = local_resource(
         move || (owner(), repo_name()),
         |(o, r)| async move { get::<Vec<DeployKey>>(&format!("/api/v1/repos/{}/{}/keys", o, r)).await },
     );
