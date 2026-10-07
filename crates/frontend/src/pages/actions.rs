@@ -1,16 +1,17 @@
-use crate::api::{delete, get, patch_json, post, post_json, WRITE_ERROR};
+use crate::api::{delete, get, local_resource, patch_json, post, post_json, WRITE_ERROR};
 use crate::components::RepoNav;
-use leptos::*;
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::*;
 use shared::{ActionWorkflow, CreateWorkflowRunOption, UpdateWorkflowRunOption, WorkflowRun};
 
 #[component]
 pub fn ActionsList() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let workflows = create_resource(
+    let workflows = local_resource(
         move || (owner(), repo_name()),
         |(o, r)| async move {
             get::<Vec<ActionWorkflow>>(&format!("/api/v1/repos/{}/{}/actions/workflows", o, r))
@@ -44,23 +45,22 @@ pub fn ActionsList() -> impl IntoView {
 #[component]
 pub fn WorkflowRunsList() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
     let workflow_id = move || {
         params.with(|params| {
             params
                 .get("id")
-                .cloned()
                 .unwrap_or_default()
                 .parse::<u64>()
                 .unwrap_or_default()
         })
     };
 
-    let (refresh, set_refresh) = create_signal(0);
-    let (action_error, set_action_error) = create_signal(Option::<String>::None);
+    let (refresh, set_refresh) = signal(0);
+    let (action_error, set_action_error) = signal(Option::<String>::None);
 
-    let runs = create_resource(
+    let runs = local_resource(
         move || (owner(), repo_name(), workflow_id(), refresh.get()),
         |(o, r, id, _)| async move {
             get::<Vec<WorkflowRun>>(&format!(
@@ -179,9 +179,9 @@ pub fn WorkflowRunsList() -> impl IntoView {
                                         <div class="flex gap-sm">
                                             <button class="rerun-btn" on:click=on_rerun>"Re-run"</button>
                                             {if is_active {
-                                                view! { <button class="cancel-run-btn" on:click=on_cancel>"Cancel"</button> }.into_view()
+                                                view! { <button class="cancel-run-btn" on:click=on_cancel>"Cancel"</button> }.into_any()
                                             } else {
-                                                view! { <button class="delete-run-btn" on:click=on_delete>"Delete"</button> }.into_view()
+                                                view! { <button class="delete-run-btn" on:click=on_delete>"Delete"</button> }.into_any()
                                             }}
                                         </div>
                                     </div>
@@ -200,9 +200,9 @@ pub fn WorkflowRunsList() -> impl IntoView {
                                                     }
                                                 }/>
                                             </div>
-                                        }.into_view()
+                                        }.into_any()
                                     } else {
-                                        view! {}.into_view()
+                                        view! { <span></span> }.into_any()
                                     }}
                                 </li>
                             }

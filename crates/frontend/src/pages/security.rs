@@ -1,20 +1,21 @@
-use crate::api::{get_opt, post, WRITE_ERROR};
+use crate::api::{get_opt, local_resource, post, WRITE_ERROR};
 use crate::components::RepoNav;
-use leptos::*;
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::*;
 use shared::SecurityScanReport;
 
 #[component]
 pub fn SecurityDashboard() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let (scanning, set_scanning) = create_signal(false);
-    let (refresh, set_refresh) = create_signal(0);
-    let (scan_error, set_scan_error) = create_signal(Option::<String>::None);
+    let (scanning, set_scanning) = signal(false);
+    let (refresh, set_refresh) = signal(0);
+    let (scan_error, set_scan_error) = signal(Option::<String>::None);
 
-    let report = create_resource(
+    let report = local_resource(
         move || (owner(), repo_name(), refresh.get()),
         |(o, r, _)| async move {
             get_opt::<SecurityScanReport>(&format!("/api/v1/repos/{}/{}/security/scan", o, r)).await
@@ -75,7 +76,7 @@ pub fn SecurityDashboard() -> impl IntoView {
                                             <div class="security-clear">
                                                 "✅ No vulnerabilities or secret leaks detected in repository!"
                                             </div>
-                                        }.into_view()
+                                        }.into_any()
                                     } else {
                                         view! {
                                             <div class="vulnerability-list">
@@ -107,12 +108,12 @@ pub fn SecurityDashboard() -> impl IntoView {
                                                     }
                                                 }/>
                                             </div>
-                                        }.into_view()
+                                        }.into_any()
                                     }}
                                 </div>
-                            }.into_view()
+                            }.into_any()
                         },
-                        None => view! { <div>"Failed to load scan report."</div> }.into_view(),
+                        None => view! { <div>"Failed to load scan report."</div> }.into_any(),
                     })}
                 </Suspense>
             </div>

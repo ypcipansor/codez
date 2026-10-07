@@ -1,5 +1,5 @@
-use leptos::*;
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos_router::hooks::*;
 use wasm_bindgen::JsCast;
 
 /// Application-wide top navigation bar.

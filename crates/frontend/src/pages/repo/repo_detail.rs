@@ -1,9 +1,11 @@
 //! Repository overview, source browser, commits, branches and tags.
 
-use crate::api::{get, get_or, get_text, post_json, put, put_json, WRITE_ERROR};
+use crate::api::{get, get_or, get_text, local_resource, post_json, put, put_json, WRITE_ERROR};
 use crate::components::{RepoNav, RepoRefresh};
-use leptos::*;
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::*;
+use leptos_router::NavigateOptions;
 use shared::{
     Branch, CodeSearchResult, Collaborator, Commit, CommitStatus, DiffFile, FileEntry,
     LanguageStat, MigrateRepoOption, RepoPulseStats, RepoTopicOptions, Repository, Tag,
@@ -13,38 +15,38 @@ use shared::{
 #[component]
 pub fn RepoDetail() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
-    let trigger_refresh = create_rw_signal(0u32);
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
+    let trigger_refresh = RwSignal::new(0u32);
     // Share the invalidation trigger with RepoNav so a star/watch action (which
     // changes the server-side counts) refreshes both the header and this
     // overview instead of leaving the overview stats stale.
     provide_context(RepoRefresh(trigger_refresh));
 
-    let repo = create_resource(
+    let repo = local_resource(
         move || (owner(), repo_name(), trigger_refresh.get()),
         |(o, r, _)| async move {
             get_or::<Option<Repository>>(&format!("/api/v1/repos/{}/{}", o, r), None).await
         },
     );
 
-    let languages = create_resource(
+    let languages = local_resource(
         move || (owner(), repo_name()),
         |(o, r)| async move {
             get::<Vec<LanguageStat>>(&format!("/api/v1/repos/{}/{}/languages", o, r)).await
         },
     );
 
-    let topics = create_resource(
+    let topics = local_resource(
         move || (owner(), repo_name(), trigger_refresh.get()),
         |(o, r, _)| async move {
             get::<Vec<shared::Topic>>(&format!("/api/v1/repos/{}/{}/topics", o, r)).await
         },
     );
 
-    let (is_editing_topics, set_is_editing_topics) = create_signal(false);
-    let (topics_input, set_topics_input) = create_signal("".to_string());
-    let (topics_error, set_topics_error) = create_signal(Option::<String>::None);
+    let (is_editing_topics, set_is_editing_topics) = signal(false);
+    let (topics_input, set_topics_input) = signal("".to_string());
+    let (topics_error, set_topics_error) = signal(Option::<String>::None);
 
     let start_editing_topics = move |_| {
         let current_topics = topics.get().unwrap_or_default();
@@ -125,7 +127,7 @@ pub fn RepoDetail() -> impl IntoView {
                             {move || topics_error.get().map(|msg| view! {
                                 <p class="form-error" role="alert">{msg}</p>
                             })}
-                        }.into_view()
+                        }.into_any()
                     } else {
                         view! {
                             <Suspense fallback=move || view! { <span></span> }>
@@ -139,7 +141,7 @@ pub fn RepoDetail() -> impl IntoView {
                                     <button class="btn-sm" on:click=start_editing_topics>"Edit topics"</button>
                                 </div>
                             </Suspense>
-                        }.into_view()
+                        }.into_any()
                     }}
                 </div>
 
@@ -155,8 +157,8 @@ pub fn RepoDetail() -> impl IntoView {
                                 "Clone URL: "
                                 <code>"https://codeza.com/" {r.owner} "/" {r.name} ".git"</code>
                             </p>
-                        }.into_view(),
-                        _ => view! { <div class="empty-state">"Repository not found."</div> }.into_view()
+                        }.into_any(),
+                        _ => view! { <div class="empty-state">"Repository not found."</div> }.into_any()
                     }}
                 </Suspense>
             </div>
@@ -166,12 +168,12 @@ pub fn RepoDetail() -> impl IntoView {
 #[component]
 pub fn RepoPulse() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let (period, set_period) = create_signal("weekly".to_string());
+    let (period, set_period) = signal("weekly".to_string());
 
-    let stats = create_resource(
+    let stats = local_resource(
         move || (owner(), repo_name(), period.get()),
         |(o, r, p)| async move {
             get_or::<RepoPulseStats>(
@@ -228,7 +230,7 @@ pub fn RepoPulse() -> impl IntoView {
                     <div class="active-authors">
                         <h4>"Active Contributors"</h4>
                         {if s.active_authors.is_empty() {
-                            view! { <p>"No active contributors in this period."</p> }.into_view()
+                            view! { <p>"No active contributors in this period."</p> }.into_any()
                         } else {
                             view! {
                                 <ul>
@@ -236,7 +238,7 @@ pub fn RepoPulse() -> impl IntoView {
                                         view! { <li>{u.username}</li> }
                                     }/>
                                 </ul>
-                            }.into_view()
+                            }.into_any()
                         }}
                     </div>
                 })}
@@ -250,17 +252,17 @@ pub fn RepoCode() -> impl IntoView {
     let params = use_params_map();
     let query = use_query_map();
     let navigate = use_navigate();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
-    let path = move || params.with(|params| params.get("path").cloned().unwrap_or_default());
-    let branch_ref = move || query.with(|q| q.get("ref").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
+    let path = move || params.with(|params| params.get("path").unwrap_or_default());
+    let branch_ref = move || query.with(|q| q.get("ref").unwrap_or_default());
 
-    let branches = create_resource(
+    let branches = local_resource(
         move || (owner(), repo_name()),
         |(o, r)| async move { get::<Vec<Branch>>(&format!("/api/v1/repos/{}/{}/branches", o, r)).await },
     );
 
-    let contents = create_resource(
+    let contents = local_resource(
         move || (owner(), repo_name(), path(), branch_ref()),
         |(o, r, p, b)| async move {
             let mut url = if p.is_empty() {
@@ -275,17 +277,17 @@ pub fn RepoCode() -> impl IntoView {
         },
     );
 
-    let repo_meta = create_resource(
+    let repo_meta = local_resource(
         move || (owner(), repo_name()),
         |(o, r)| async move {
             get_or::<Option<Repository>>(&format!("/api/v1/repos/{}/{}", o, r), None).await
         },
     );
 
-    let nav_ref = store_value(navigate);
-    let owner_ref = store_value(owner);
-    let repo_ref = store_value(repo_name);
-    let path_ref = store_value(path);
+    let nav_ref = StoredValue::new(navigate);
+    let owner_ref = StoredValue::new(owner);
+    let repo_ref = StoredValue::new(repo_name);
+    let path_ref = StoredValue::new(path);
 
     view! {
         <div class="repo-code">
@@ -312,7 +314,7 @@ pub fn RepoCode() -> impl IntoView {
                             }>
                                 <For each=move || list.clone() key=|b| b.name.clone() children=move |b| {
                                     let selected = b.name == current;
-                                    view! { <option value={b.name.clone()} selected={selected}>{b.name}</option> }
+                                    view! { <option value={b.name.clone()} selected={selected}>{b.name.clone()}</option> }
                                 }/>
                             </select>
                             }
@@ -328,7 +330,7 @@ pub fn RepoCode() -> impl IntoView {
                 <Suspense fallback=move || view! { <li>"Loading files..."</li> }>
                     {move || contents.get().map(|files| {
                         if files.is_empty() {
-                             view! { <li>"No files found or empty directory."</li> }.into_view()
+                             view! { <li>"No files found or empty directory."</li> }.into_any()
                         } else {
                             view! {
                                 <For each=move || files.clone() key=|f| f.path.clone() children=move |f| {
@@ -349,14 +351,14 @@ pub fn RepoCode() -> impl IntoView {
                                             {if !is_dir {
                                                 let edit_link = format!("/repos/{}/{}/edit/{}", owner(), repo_name(), f.path);
                                                 let final_edit_link = if branch_ref().is_empty() { edit_link } else { format!("{}?ref={}", edit_link, branch_ref()) };
-                                                view! { <a href=final_edit_link class="ml-2">"Edit"</a> }.into_view()
+                                                view! { <a href=final_edit_link class="ml-2">"Edit"</a> }.into_any()
                                             } else {
-                                                view! { <span></span> }.into_view()
+                                                view! { <span></span> }.into_any()
                                             }}
                                         </li>
                                     }
                                 }/>
-                            }.into_view()
+                            }.into_any()
                         }
                     })}
                 </Suspense>
@@ -369,16 +371,16 @@ pub fn RepoCode() -> impl IntoView {
 pub fn FileEdit() -> impl IntoView {
     let params = use_params_map();
     let query = use_query_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
-    let path = move || params.with(|params| params.get("path").cloned().unwrap_or_default());
-    let branch_ref = move || query.with(|q| q.get("ref").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
+    let path = move || params.with(|params| params.get("path").unwrap_or_default());
+    let branch_ref = move || query.with(|q| q.get("ref").unwrap_or_default());
 
-    let (content, set_content) = create_signal("".to_string());
-    let (message, set_message) = create_signal("Update file".to_string());
-    let (save_error, set_save_error) = create_signal(Option::<String>::None);
+    let (content, set_content) = signal("".to_string());
+    let (message, set_message) = signal("Update file".to_string());
+    let (save_error, set_save_error) = signal(Option::<String>::None);
 
-    let _ = create_resource(
+    let _ = local_resource(
         move || (owner(), repo_name(), path(), branch_ref()),
         move |(o, r, p, b)| async move {
             let mut url = format!("/api/v1/repos/{}/{}/raw/{}", o, r, p);
@@ -439,10 +441,10 @@ pub fn FileEdit() -> impl IntoView {
 #[component]
 pub fn CommitList() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let commits = create_resource(
+    let commits = local_resource(
         move || (owner(), repo_name()),
         |(o, r)| async move { get::<Vec<Commit>>(&format!("/api/v1/repos/{}/{}/commits", o, r)).await },
     );
@@ -478,11 +480,11 @@ pub fn CommitList() -> impl IntoView {
 #[component]
 pub fn CommitDiff() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
-    let sha = move || params.with(|params| params.get("sha").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
+    let sha = move || params.with(|params| params.get("sha").unwrap_or_default());
 
-    let diffs = create_resource(
+    let diffs = local_resource(
         move || (owner(), repo_name(), sha()),
         |(o, r, s)| async move {
             get::<Vec<DiffFile>>(&format!("/api/v1/repos/{}/{}/commits/{}/diff", o, r, s)).await
@@ -529,10 +531,10 @@ pub fn CommitDiff() -> impl IntoView {
 #[component]
 pub fn BranchList() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let branches = create_resource(
+    let branches = local_resource(
         move || (owner(), repo_name()),
         |(o, r)| async move { get::<Vec<Branch>>(&format!("/api/v1/repos/{}/{}/branches", o, r)).await },
     );
@@ -563,10 +565,10 @@ pub fn BranchList() -> impl IntoView {
 #[component]
 pub fn TagList() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let tags = create_resource(
+    let tags = local_resource(
         move || (owner(), repo_name()),
         |(o, r)| async move { get::<Vec<Tag>>(&format!("/api/v1/repos/{}/{}/tags", o, r)).await },
     );
@@ -596,12 +598,12 @@ pub fn TagList() -> impl IntoView {
 #[component]
 pub fn CollaboratorList() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
-    let (new_collab, set_new_collab) = create_signal("".to_string());
-    let (form_error, set_form_error) = create_signal(Option::<String>::None);
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
+    let (new_collab, set_new_collab) = signal("".to_string());
+    let (form_error, set_form_error) = signal(Option::<String>::None);
 
-    let collabs = create_resource(
+    let collabs = local_resource(
         move || (owner(), repo_name()),
         |(o, r)| async move {
             get::<Vec<Collaborator>>(&format!("/api/v1/repos/{}/{}/collaborators", o, r)).await
@@ -650,12 +652,12 @@ pub fn CollaboratorList() -> impl IntoView {
 #[component]
 pub fn RepoCodeSearch() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
-    let (query, set_query) = create_signal("".to_string());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
+    let (query, set_query) = signal("".to_string());
 
     // Trigger resource when query changes (and is not empty)
-    let search_results = create_resource(
+    let search_results = local_resource(
         move || (owner(), repo_name(), query.get()),
         |(o, r, q)| async move {
             if q.is_empty() {
@@ -700,7 +702,7 @@ pub fn RepoCodeSearch() -> impl IntoView {
 
 #[component]
 pub fn CommitStatusList(owner: String, repo: String, sha: String) -> impl IntoView {
-    let statuses = create_resource(
+    let statuses = local_resource(
         move || (owner.clone(), repo.clone(), sha.clone()),
         |(o, r, s)| async move {
             get::<Vec<CommitStatus>>(&format!("/api/v1/repos/{}/{}/commits/{}/statuses", o, r, s))
@@ -714,7 +716,7 @@ pub fn CommitStatusList(owner: String, repo: String, sha: String) -> impl IntoVi
             <Suspense fallback=move || view! { <span>"Loading checks..."</span> }>
                 {move || statuses.get().map(|list| {
                     if list.is_empty() {
-                        view! { <div>"No checks run."</div> }.into_view()
+                        view! { <div>"No checks run."</div> }.into_any()
                     } else {
                         view! {
                             <ul class="list-reset">
@@ -738,7 +740,7 @@ pub fn CommitStatusList(owner: String, repo: String, sha: String) -> impl IntoVi
                                     }
                                 }/>
                             </ul>
-                        }.into_view()
+                        }.into_any()
                     }
                 })}
             </Suspense>
@@ -748,10 +750,10 @@ pub fn CommitStatusList(owner: String, repo: String, sha: String) -> impl IntoVi
 
 #[component]
 pub fn MigrateRepo() -> impl IntoView {
-    let (clone_addr, set_clone_addr) = create_signal("".to_string());
-    let (repo_name, set_repo_name) = create_signal("".to_string());
-    let (service, set_service) = create_signal("git".to_string());
-    let (form_error, set_form_error) = create_signal(Option::<String>::None);
+    let (clone_addr, set_clone_addr) = signal("".to_string());
+    let (repo_name, set_repo_name) = signal("".to_string());
+    let (service, set_service) = signal("git".to_string());
+    let (form_error, set_form_error) = signal(Option::<String>::None);
     let navigate = use_navigate();
 
     let on_submit = move |ev: leptos::ev::SubmitEvent| {

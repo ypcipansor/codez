@@ -1,17 +1,18 @@
-use crate::api::{get, get_or, post_json, WRITE_ERROR};
-use leptos::*;
-use leptos_router::*;
+use crate::api::{get, get_or, local_resource, post_json, WRITE_ERROR};
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::*;
 use shared::{CreatePackageOption, Package};
 
 #[component]
 pub fn PackageList() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
 
-    let (show_upload, set_show_upload) = create_signal(false);
-    let (refresh, set_refresh) = create_signal(0);
+    let (show_upload, set_show_upload) = signal(false);
+    let (refresh, set_refresh) = signal(0);
 
-    let packages = create_resource(
+    let packages = local_resource(
         move || (owner(), refresh.get()),
         |(owner_name, _)| async move {
             get::<Vec<Package>>(&format!("/api/v1/packages/{}", owner_name)).await
@@ -28,9 +29,9 @@ pub fn PackageList() -> impl IntoView {
             </div>
 
             {move || if show_upload.get() {
-                view! { <UploadPackageForm owner=owner() on_success=move || { set_show_upload.set(false); set_refresh.update(|n| *n += 1); } /> }.into_view()
+                view! { <UploadPackageForm owner=owner() on_success=move || { set_show_upload.set(false); set_refresh.update(|n| *n += 1); } /> }.into_any()
             } else {
-                view! { <span></span> }.into_view()
+                view! { <span></span> }.into_any()
             }}
 
             <ul>
@@ -57,10 +58,10 @@ fn UploadPackageForm<F>(owner: String, on_success: F) -> impl IntoView
 where
     F: Fn() + Clone + 'static,
 {
-    let (name, set_name) = create_signal("".to_string());
-    let (version, set_version) = create_signal("".to_string());
-    let (pkg_type, set_pkg_type) = create_signal("npm".to_string());
-    let (form_error, set_form_error) = create_signal(Option::<String>::None);
+    let (name, set_name) = signal("".to_string());
+    let (version, set_version) = signal("".to_string());
+    let (pkg_type, set_pkg_type) = signal("npm".to_string());
+    let (form_error, set_form_error) = signal(Option::<String>::None);
 
     let on_submit = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
@@ -109,12 +110,12 @@ where
 #[component]
 pub fn PackageDetail() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let name = move || params.with(|params| params.get("name").cloned().unwrap_or_default());
-    let version = move || params.with(|params| params.get("version").cloned().unwrap_or_default());
-    let pkg_type = move || params.with(|params| params.get("type").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let name = move || params.with(|params| params.get("name").unwrap_or_default());
+    let version = move || params.with(|params| params.get("version").unwrap_or_default());
+    let pkg_type = move || params.with(|params| params.get("type").unwrap_or_default());
 
-    let package = create_resource(
+    let package = local_resource(
         move || (owner(), pkg_type(), name(), version()),
         |(o, t, n, v)| async move {
             get_or::<Option<Package>>(&format!("/api/v1/packages/{}/{}/{}/{}", o, t, n, v), None)
@@ -148,9 +149,9 @@ pub fn PackageDetail() -> impl IntoView {
                                 <h4>"Installation"</h4>
                                 <pre>{install_cmd}</pre>
                             </div>
-                        }.into_view()
+                        }.into_any()
                     },
-                    _ => view! { <h3>"Package Not Found"</h3> }.into_view()
+                    _ => view! { <h3>"Package Not Found"</h3> }.into_any()
                 }}
             </Suspense>
         </div>

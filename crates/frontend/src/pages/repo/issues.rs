@@ -1,9 +1,10 @@
 //! Issue, label and milestone components.
 
-use crate::api::{delete, get, get_or, patch_json, post_json, put};
+use crate::api::{delete, get, get_or, local_resource, patch_json, post_json, put};
 use crate::components::RepoNav;
-use leptos::*;
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::*;
 use shared::{
     Comment, CreateCommentOption, CreateIssueOption, CreateLabelOption, CreateMilestoneOption,
     Issue, Label, Milestone, MilestoneStats, UpdateIssueOption,
@@ -12,27 +13,27 @@ use shared::{
 #[component]
 pub fn IssueList() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let (state_filter, set_state_filter) = create_signal("open".to_string());
-    let (search_query, set_search_query) = create_signal("".to_string());
-    let (label_filter, set_label_filter) = create_signal("".to_string());
-    let (assignee_filter, set_assignee_filter) = create_signal("".to_string());
+    let (state_filter, set_state_filter) = signal("open".to_string());
+    let (search_query, set_search_query) = signal("".to_string());
+    let (label_filter, set_label_filter) = signal("".to_string());
+    let (assignee_filter, set_assignee_filter) = signal("".to_string());
     let query_map = use_query_map();
-    let initial_milestone = query_map.with(|q| q.get("milestone_id").cloned().unwrap_or_default());
-    let (milestone_filter, set_milestone_filter) = create_signal(initial_milestone);
-    let (sort, set_sort) = create_signal("created".to_string());
-    let (direction, set_direction) = create_signal("desc".to_string());
-    let (page, set_page) = create_signal(1);
-    let (show_new_issue, set_show_new_issue) = create_signal(false);
-    let (new_issue_title, set_new_issue_title) = create_signal("".to_string());
-    let (new_issue_body, set_new_issue_body) = create_signal("".to_string());
-    let (new_issue_milestone, set_new_issue_milestone) = create_signal("".to_string());
-    let (refresh, set_refresh) = create_signal(0);
-    let (form_error, set_form_error) = create_signal(Option::<String>::None);
+    let initial_milestone = query_map.with(|q| q.get("milestone_id").unwrap_or_default());
+    let (milestone_filter, set_milestone_filter) = signal(initial_milestone);
+    let (sort, set_sort) = signal("created".to_string());
+    let (direction, set_direction) = signal("desc".to_string());
+    let (page, set_page) = signal(1);
+    let (show_new_issue, set_show_new_issue) = signal(false);
+    let (new_issue_title, set_new_issue_title) = signal("".to_string());
+    let (new_issue_body, set_new_issue_body) = signal("".to_string());
+    let (new_issue_milestone, set_new_issue_milestone) = signal("".to_string());
+    let (refresh, set_refresh) = signal(0);
+    let (form_error, set_form_error) = signal(Option::<String>::None);
 
-    let issues = create_resource(
+    let issues = local_resource(
         move || {
             (
                 owner(),
@@ -66,12 +67,12 @@ pub fn IssueList() -> impl IntoView {
         },
     );
 
-    let labels = create_resource(
+    let labels = local_resource(
         move || (owner(), repo_name()),
         |(o, r)| async move { get::<Vec<Label>>(&format!("/api/v1/repos/{}/{}/labels", o, r)).await },
     );
 
-    let users = create_resource(
+    let users = local_resource(
         || (),
         |_| async move {
             // Mock users for filtering
@@ -82,7 +83,7 @@ pub fn IssueList() -> impl IntoView {
         },
     );
 
-    let milestones = create_resource(
+    let milestones = local_resource(
         move || (owner(), repo_name()),
         |(o, r)| async move {
             get::<Vec<shared::Milestone>>(&format!("/api/v1/repos/{}/{}/milestones", o, r)).await
@@ -149,9 +150,9 @@ pub fn IssueList() -> impl IntoView {
                             <p class="form-error" role="alert">{msg}</p>
                         })}
                     </form>
-                }.into_view()
+                }.into_any()
             } else {
-                view! { <span></span> }.into_view()
+                view! { <span></span> }.into_any()
             }}
 
             <div class="issue-filters">
@@ -188,7 +189,7 @@ pub fn IssueList() -> impl IntoView {
                         <select on:change=move |ev| set_assignee_filter.set(event_target_value(&ev))>
                             <option value="">"Assignee"</option>
                             <For each=move || list.clone() key=|u| u.id children=move |u| {
-                                view! { <option value={u.username.clone()}>{u.username}</option> }
+                                view! { <option value={u.username.clone()}>{u.username.clone()}</option> }
                             }/>
                         </select>
                     })}
@@ -226,47 +227,46 @@ pub fn IssueList() -> impl IntoView {
 #[component]
 pub fn IssueDetail() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
     let index = move || {
         params.with(|params| {
             params
                 .get("index")
-                .cloned()
                 .unwrap_or_default()
                 .parse::<u64>()
                 .unwrap_or_default()
         })
     };
 
-    let (new_comment, set_new_comment) = create_signal("".to_string());
-    let (trigger_refresh, set_trigger_refresh) = create_signal(0);
-    let (editing_comment_id, set_editing_comment_id) = create_signal(None::<u64>);
-    let (edit_comment_body, set_edit_comment_body) = create_signal("".to_string());
-    let (action_error, set_action_error) = create_signal(Option::<String>::None);
+    let (new_comment, set_new_comment) = signal("".to_string());
+    let (trigger_refresh, set_trigger_refresh) = signal(0);
+    let (editing_comment_id, set_editing_comment_id) = signal(None::<u64>);
+    let (edit_comment_body, set_edit_comment_body) = signal("".to_string());
+    let (action_error, set_action_error) = signal(Option::<String>::None);
 
-    let issue = create_resource(
+    let issue = local_resource(
         move || (owner(), repo_name(), index(), trigger_refresh.get()),
         |(o, r, i, _)| async move {
             get_or::<Option<Issue>>(&format!("/api/v1/repos/{}/{}/issues/{}", o, r, i), None).await
         },
     );
 
-    let comments = create_resource(
+    let comments = local_resource(
         move || (owner(), repo_name(), index(), trigger_refresh.get()),
         |(o, r, i, _)| async move {
             get::<Vec<Comment>>(&format!("/api/v1/repos/{}/{}/issues/{}/comments", o, r, i)).await
         },
     );
 
-    let available_milestones = create_resource(
+    let available_milestones = local_resource(
         move || (owner(), repo_name()),
         |(o, r)| async move {
             get::<Vec<Milestone>>(&format!("/api/v1/repos/{}/{}/milestones", o, r)).await
         },
     );
 
-    let available_users = create_resource(
+    let available_users = local_resource(
         || (),
         |_| async move {
             // Mock users for assignment - in real app, fetch from collaborators or org members
@@ -437,7 +437,7 @@ pub fn IssueDetail() -> impl IntoView {
     };
 
     // Label management
-    let (new_label_name, set_new_label_name) = create_signal("".to_string());
+    let (new_label_name, set_new_label_name) = signal("".to_string());
     let on_add_label = move |_| {
         let o = owner();
         let r = repo_name();
@@ -486,7 +486,7 @@ pub fn IssueDetail() -> impl IntoView {
     };
 
     // Assignee management
-    let (selected_assignee, set_selected_assignee) = create_signal("".to_string());
+    let (selected_assignee, set_selected_assignee) = signal("".to_string());
     let on_add_assignee = move |_| {
         let username = selected_assignee.get();
         if !username.is_empty() {
@@ -560,9 +560,9 @@ pub fn IssueDetail() -> impl IntoView {
         });
     };
 
-    let (is_editing, set_is_editing) = create_signal(false);
-    let (edit_title, set_edit_title) = create_signal("".to_string());
-    let (edit_body, set_edit_body) = create_signal("".to_string());
+    let (is_editing, set_is_editing) = signal(false);
+    let (edit_title, set_edit_title) = signal("".to_string());
+    let (edit_body, set_edit_body) = signal("".to_string());
 
     let on_start_edit = move |t: String, b: String| {
         set_edit_title.set(t);
@@ -616,9 +616,9 @@ pub fn IssueDetail() -> impl IntoView {
                                     {if is_editing.get() {
                                         view! {
                                             <input type="text" prop:value=edit_title on:input=move |ev| set_edit_title.set(event_target_value(&ev)) class="input-title" />
-                                        }.into_view()
+                                        }.into_any()
                                     } else {
-                                        view! { <h2>{i.title.clone()} " #" {i.number}</h2> }.into_view()
+                                        view! { <h2>{i.title.clone()} " #" {i.number}</h2> }.into_any()
                                     }}
                                     <span class="state">{i.state.clone()}</span>
                                     <span class="meta">" opened by " {i.user.username}</span>
@@ -626,14 +626,14 @@ pub fn IssueDetail() -> impl IntoView {
                                         {if state_clone == "open" { "Close Issue" } else { "Reopen Issue" }}
                                     </button>
                                     {if !is_editing.get() {
-                                        view! { <button on:click=move |_| on_start_edit(title_clone.clone(), body_clone.clone()) class="ml-1">"Edit"</button> }.into_view()
+                                        view! { <button on:click=move |_| on_start_edit(title_clone.clone(), body_clone.clone()) class="ml-1">"Edit"</button> }.into_any()
                                     } else {
-                                         view! { <span></span> }.into_view()
+                                         view! { <span></span> }.into_any()
                                     }}
                                     {if i.is_locked {
-                                        view! { <button on:click=on_unlock class="ml-1 text-danger">"Unlock Conversation"</button> }.into_view()
+                                        view! { <button on:click=on_unlock class="ml-1 text-danger">"Unlock Conversation"</button> }.into_any()
                                     } else {
-                                        view! { <button on:click=on_lock class="ml-1 text-danger">"Lock Conversation"</button> }.into_view()
+                                        view! { <button on:click=on_lock class="ml-1 text-danger">"Lock Conversation"</button> }.into_any()
                                     }}
                                 </div>
                                 <div class="issue-container flex">
@@ -646,9 +646,9 @@ pub fn IssueDetail() -> impl IntoView {
                                                         <button on:click=on_save_edit>"Save"</button>
                                                         <button on:click=on_cancel_edit class="ml-1">"Cancel"</button>
                                                     </div>
-                                                }.into_view()
+                                                }.into_any()
                                             } else {
-                                                view! { <p>{i.body.clone().unwrap_or_default()}</p> }.into_view()
+                                                view! { <p>{i.body.clone().unwrap_or_default()}</p> }.into_any()
                                             }}
                                         </div>
                                     </div>
@@ -673,7 +673,7 @@ pub fn IssueDetail() -> impl IntoView {
                                                         <option value="">"Add Assignee"</option>
                                                         <For each=move || users.clone() key=|u| u.id children=move |u| {
                                                             let username = u.username.clone();
-                                                            view! { <option value={username.clone()}>{username}</option> }
+                                                            view! { <option value={username.clone()}>{username.clone()}</option> }
                                                         }/>
                                                     </select>
                                                     <button on:click=on_add_assignee>"+"</button>
@@ -723,8 +723,8 @@ pub fn IssueDetail() -> impl IntoView {
                                     </div>
                                 </div>
                             </div>
-                        }.into_view() },
-                        _ => view! { <p>"Issue not found"</p> }.into_view()
+                        }.into_any() },
+                        _ => view! { <p>"Issue not found"</p> }.into_any()
                     }}
                 </Suspense>
 
@@ -757,9 +757,9 @@ pub fn IssueDetail() -> impl IntoView {
                                                         <button on:click=move |_| on_save_edit_comment(comment_id)>"Save"</button>
                                                         <button on:click=on_cancel_edit_comment>"Cancel"</button>
                                                     </div>
-                                                }.into_view()
+                                                }.into_any()
                                             } else {
-                                                view! { <p>{c.body.clone()}</p> }.into_view()
+                                                view! { <p>{c.body.clone()}</p> }.into_any()
                                             }}
                                         </div>
                                         <div class="comment-reactions">
@@ -790,7 +790,7 @@ pub fn IssueDetail() -> impl IntoView {
                         move || {
                             match issue_for_form.get() {
                                 Some(Some(i)) if i.is_locked => {
-                                    view! { <p class="text-danger">"This conversation is locked"</p> }.into_view()
+                                    view! { <p class="text-danger">"This conversation is locked"</p> }.into_any()
                                 },
                                 _ => {
                                     view! {
@@ -805,7 +805,7 @@ pub fn IssueDetail() -> impl IntoView {
                                                 <p class="form-error" role="alert">{msg}</p>
                                             })}
                                         </form>
-                                    }.into_view()
+                                    }.into_any()
                                 }
                             }
                         }
@@ -818,15 +818,15 @@ pub fn IssueDetail() -> impl IntoView {
 #[component]
 pub fn LabelList() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let (name, set_name) = create_signal("".to_string());
-    let (form_error, set_form_error) = create_signal(Option::<String>::None);
-    let (color, set_color) = create_signal("#000000".to_string());
-    let (refresh, set_refresh) = create_signal(0u32);
+    let (name, set_name) = signal("".to_string());
+    let (form_error, set_form_error) = signal(Option::<String>::None);
+    let (color, set_color) = signal("#000000".to_string());
+    let (refresh, set_refresh) = signal(0u32);
 
-    let labels = create_resource(
+    let labels = local_resource(
         move || (owner(), repo_name(), refresh.get()),
         |(o, r, _)| async move { get::<Vec<Label>>(&format!("/api/v1/repos/{}/{}/labels", o, r)).await },
     );
@@ -884,14 +884,14 @@ pub fn LabelList() -> impl IntoView {
 #[component]
 pub fn MilestoneList() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
 
-    let (title, set_title) = create_signal("".to_string());
-    let (form_error, set_form_error) = create_signal(Option::<String>::None);
-    let (refresh, set_refresh) = create_signal(0u32);
+    let (title, set_title) = signal("".to_string());
+    let (form_error, set_form_error) = signal(Option::<String>::None);
+    let (refresh, set_refresh) = signal(0u32);
 
-    let milestones = create_resource(
+    let milestones = local_resource(
         move || (owner(), repo_name(), refresh.get()),
         |(o, r, _)| async move {
             get::<Vec<Milestone>>(&format!("/api/v1/repos/{}/{}/milestones", o, r)).await
@@ -951,20 +951,19 @@ pub fn MilestoneList() -> impl IntoView {
 #[component]
 pub fn MilestoneDetail() -> impl IntoView {
     let params = use_params_map();
-    let owner = move || params.with(|params| params.get("owner").cloned().unwrap_or_default());
-    let repo_name = move || params.with(|params| params.get("repo").cloned().unwrap_or_default());
+    let owner = move || params.with(|params| params.get("owner").unwrap_or_default());
+    let repo_name = move || params.with(|params| params.get("repo").unwrap_or_default());
     let index = move || {
         params.with(|params| {
             params
                 .get("index")
-                .cloned()
                 .unwrap_or_default()
                 .parse::<u64>()
                 .unwrap_or_default()
         })
     };
 
-    let milestone = create_resource(
+    let milestone = local_resource(
         move || (owner(), repo_name(), index()),
         |(o, r, i)| async move {
             get_or::<Option<Milestone>>(
@@ -975,7 +974,7 @@ pub fn MilestoneDetail() -> impl IntoView {
         },
     );
 
-    let stats = create_resource(
+    let stats = local_resource(
         move || (owner(), repo_name(), index()),
         |(o, r, i)| async move {
             get_or::<MilestoneStats>(
@@ -998,8 +997,8 @@ pub fn MilestoneDetail() -> impl IntoView {
                         <h3>"Milestone: " {m.title}</h3>
                         <p>{m.description.unwrap_or_default()}</p>
                         <p>"State: " {m.state}</p>
-                    }.into_view(),
-                    _ => view! { <p>"Milestone not found"</p> }.into_view()
+                    }.into_any(),
+                    _ => view! { <p>"Milestone not found"</p> }.into_any()
                 }}
             </Suspense>
              <Suspense fallback=move || view! { <p>"Loading stats..."</p> }>

@@ -1,23 +1,24 @@
-use crate::api::{encode_query, get, patch};
-use leptos::*;
-use leptos_router::use_query_map;
+use crate::api::{encode_query, get, local_resource, patch};
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::use_query_map;
 use shared::{Activity, Issue, Notification, PullRequest, Repository};
 
 #[component]
 pub fn UserDashboard() -> impl IntoView {
-    let (active_tab, set_active_tab) = create_signal("feed".to_string());
+    let (active_tab, set_active_tab) = signal("feed".to_string());
 
-    let repos = create_resource(
+    let repos = local_resource(
         || (),
         |_| async move { get::<Vec<Repository>>("/api/v1/repos").await },
     );
 
-    let feeds = create_resource(
+    let feeds = local_resource(
         || (),
         |_| async move { get::<Vec<Activity>>("/api/v1/user/feeds").await },
     );
 
-    let assigned_issues = create_resource(
+    let assigned_issues = local_resource(
         move || active_tab.get(),
         |tab| async move {
             if tab == "issues" {
@@ -28,7 +29,7 @@ pub fn UserDashboard() -> impl IntoView {
         },
     );
 
-    let my_pulls = create_resource(
+    let my_pulls = local_resource(
         move || active_tab.get(),
         |tab| async move {
             if tab == "pulls" {
@@ -87,7 +88,7 @@ pub fn UserDashboard() -> impl IntoView {
                                     <Suspense fallback=move || view! { <li class="text-muted">"Loading feed…"</li> }>
                                         {move || feeds.get().map(|list| {
                                             if list.is_empty() {
-                                                view! { <li class="text-muted">"No recent activity."</li> }.into_view()
+                                                view! { <li class="text-muted">"No recent activity."</li> }.into_any()
                                             } else {
                                                 view! {
                                                     <For each=move || list.clone() key=|a| a.id children=move |a| {
@@ -109,18 +110,18 @@ pub fn UserDashboard() -> impl IntoView {
                                                             </li>
                                                         }
                                                     }/>
-                                                }.into_view()
+                                                }.into_any()
                                             }
                                         })}
                                     </Suspense>
                                 </ul>
-                            }.into_view(),
+                            }.into_any(),
                             "issues" => view! {
                                 <ul class="item-list">
                                     <Suspense fallback=move || view! { <li class="text-muted">"Loading issues…"</li> }>
                                         {move || assigned_issues.get().map(|list| {
                                             if list.is_empty() {
-                                                view! { <li class="text-muted">"No assigned issues."</li> }.into_view()
+                                                view! { <li class="text-muted">"No assigned issues."</li> }.into_any()
                                             } else {
                                                 view! {
                                                     <For each=move || list.clone() key=|i| i.id children=move |i| {
@@ -131,18 +132,18 @@ pub fn UserDashboard() -> impl IntoView {
                                                             </li>
                                                         }
                                                     }/>
-                                                }.into_view()
+                                                }.into_any()
                                             }
                                         })}
                                     </Suspense>
                                 </ul>
-                            }.into_view(),
+                            }.into_any(),
                             "pulls" => view! {
                                 <ul class="item-list">
                                     <Suspense fallback=move || view! { <li class="text-muted">"Loading pull requests…"</li> }>
                                         {move || my_pulls.get().map(|list| {
                                             if list.is_empty() {
-                                                view! { <li class="text-muted">"No pull requests."</li> }.into_view()
+                                                view! { <li class="text-muted">"No pull requests."</li> }.into_any()
                                             } else {
                                                 view! {
                                                     <For each=move || list.clone() key=|p| p.id children=move |p| {
@@ -153,13 +154,13 @@ pub fn UserDashboard() -> impl IntoView {
                                                             </li>
                                                         }
                                                     }/>
-                                                }.into_view()
+                                                }.into_any()
                                             }
                                         })}
                                     </Suspense>
                                 </ul>
-                            }.into_view(),
-                            _ => view! { <div></div> }.into_view()
+                            }.into_any(),
+                            _ => view! { <div></div> }.into_any()
                         }}
                     </div>
                 </div>
@@ -170,7 +171,7 @@ pub fn UserDashboard() -> impl IntoView {
 
 #[component]
 pub fn Explore() -> impl IntoView {
-    let repos = create_resource(
+    let repos = local_resource(
         || (),
         |_| async move { get::<Vec<Repository>>("/api/v1/repos").await },
     );
@@ -186,7 +187,7 @@ pub fn Explore() -> impl IntoView {
                 <Suspense fallback=move || view! { <p class="text-muted">"Loading…"</p> }>
                     {move || repos.get().map(|list| {
                         if list.is_empty() {
-                            view! { <div class="empty-state">"No repositories yet."</div> }.into_view()
+                            view! { <div class="empty-state">"No repositories yet."</div> }.into_any()
                         } else {
                             view! {
                                 <For each=move || list.clone() key=|r| r.id children=move |r| {
@@ -199,7 +200,7 @@ pub fn Explore() -> impl IntoView {
                                         </div>
                                     }
                                 }/>
-                            }.into_view()
+                            }.into_any()
                         }
                     })}
                 </Suspense>
@@ -211,17 +212,17 @@ pub fn Explore() -> impl IntoView {
 #[component]
 pub fn Search() -> impl IntoView {
     let query_map = use_query_map();
-    let initial = query_map.with(|q| q.get("q").cloned().unwrap_or_default());
-    let (query, set_query) = create_signal(initial);
-    let (search_type, set_search_type) = create_signal("repos".to_string()); // repos | issues
+    let initial = query_map.with(|q| q.get("q").unwrap_or_default());
+    let (query, set_query) = signal(initial);
+    let (search_type, set_search_type) = signal("repos".to_string()); // repos | issues
 
-    let (repo_results, set_repo_results) = create_signal(vec![]);
-    let (issue_results, set_issue_results) = create_signal(vec![]);
+    let (repo_results, set_repo_results) = signal(vec![]);
+    let (issue_results, set_issue_results) = signal(vec![]);
 
     // Monotonic request generation. A slow earlier request must not overwrite
     // the results of a newer one, so each response is applied only if no newer
     // search has started since it was issued.
-    let generation = create_rw_signal(0u64);
+    let generation = RwSignal::new(0u64);
 
     let run_search = move |q: String, t: String| {
         let current = generation.get_untracked() + 1;
@@ -257,8 +258,8 @@ pub fn Search() -> impl IntoView {
     // `q` (a cleared header search must clear the box and previous results).
     // This single effect drives every load, so there is no duplicate initial
     // request racing the mount-time one.
-    create_effect(move |_| {
-        let q = query_map.with(|q| q.get("q").cloned().unwrap_or_default());
+    Effect::new(move |_| {
+        let q = query_map.with(|q| q.get("q").unwrap_or_default());
         set_query.set(q.clone());
         run_search(q, search_type.get_untracked());
     });
@@ -303,7 +304,7 @@ pub fn Search() -> impl IntoView {
                                 }
                             }/>
                         </ul>
-                    }.into_view()
+                    }.into_any()
                 } else {
                     view! {
                         <ul class="item-list panel">
@@ -317,7 +318,7 @@ pub fn Search() -> impl IntoView {
                                 }
                             }/>
                         </ul>
-                    }.into_view()
+                    }.into_any()
                 }}
             </div>
         </div>
@@ -326,9 +327,9 @@ pub fn Search() -> impl IntoView {
 
 #[component]
 pub fn NotificationList() -> impl IntoView {
-    let (refresh, set_refresh) = create_signal(0);
-    let (action_error, set_action_error) = create_signal(Option::<String>::None);
-    let notifs = create_resource(
+    let (refresh, set_refresh) = signal(0);
+    let (action_error, set_action_error) = signal(Option::<String>::None);
+    let notifs = local_resource(
         move || refresh.get(),
         |_| async move { get::<Vec<Notification>>("/api/v1/notifications").await },
     );
@@ -356,7 +357,7 @@ pub fn NotificationList() -> impl IntoView {
                 <Suspense fallback=move || view! { <li class="text-muted">"Loading…"</li> }>
                     {move || notifs.get().map(|list| {
                         if list.is_empty() {
-                            view! { <li class="text-muted">"You have no notifications."</li> }.into_view()
+                            view! { <li class="text-muted">"You have no notifications."</li> }.into_any()
                         } else {
                             view! {
                                 <For each=move || list.clone() key=|n| n.id children=move |n| {
@@ -366,20 +367,20 @@ pub fn NotificationList() -> impl IntoView {
                                             <span>
                                                 <strong>{n.subject.clone()}</strong>
                                                 {if unread {
-                                                    view! { <span class="label label-accent">" (Unread)"</span> }.into_view()
+                                                    view! { <span class="label label-accent">" (Unread)"</span> }.into_any()
                                                 } else {
-                                                    view! { <span class="text-small text-muted">" (Read)"</span> }.into_view()
+                                                    view! { <span class="text-small text-muted">" (Read)"</span> }.into_any()
                                                 }}
                                             </span>
                                             {if unread {
-                                                view! { <button class="btn-sm" on:click=move |_| on_mark_read(n.id)>"Mark Read"</button> }.into_view()
+                                                view! { <button class="btn-sm" on:click=move |_| on_mark_read(n.id)>"Mark Read"</button> }.into_any()
                                             } else {
-                                                view! { <span class="text-small text-muted">"Read"</span> }.into_view()
+                                                view! { <span class="text-small text-muted">"Read"</span> }.into_any()
                                             }}
                                         </li>
                                     }
                                 }/>
-                            }.into_view()
+                            }.into_any()
                         }
                     })}
                 </Suspense>

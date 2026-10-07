@@ -1,6 +1,7 @@
-use crate::api::{delete, get, get_or, patch_json, post_json, WRITE_ERROR};
-use leptos::*;
-use leptos_router::*;
+use crate::api::{delete, get, get_or, local_resource, patch_json, post_json, WRITE_ERROR};
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::*;
 use shared::{
     Contribution, CreateGpgKeyOption, CreateKeyOption, GpgKey, LoginOption, PublicKey,
     RegisterOption, User, UserSettingsOption,
@@ -8,9 +9,9 @@ use shared::{
 
 #[component]
 pub fn Login() -> impl IntoView {
-    let (username, set_username) = create_signal("".to_string());
-    let (password, set_password) = create_signal("".to_string());
-    let (form_error, set_form_error) = create_signal(Option::<String>::None);
+    let (username, set_username) = signal("".to_string());
+    let (password, set_password) = signal("".to_string());
+    let (form_error, set_form_error) = signal(Option::<String>::None);
 
     let on_submit = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
@@ -47,10 +48,10 @@ pub fn Login() -> impl IntoView {
 
 #[component]
 pub fn Register() -> impl IntoView {
-    let (username, set_username) = create_signal("".to_string());
-    let (email, set_email) = create_signal("".to_string());
-    let (password, set_password) = create_signal("".to_string());
-    let (form_error, set_form_error) = create_signal(Option::<String>::None);
+    let (username, set_username) = signal("".to_string());
+    let (email, set_email) = signal("".to_string());
+    let (password, set_password) = signal("".to_string());
+    let (form_error, set_form_error) = signal(Option::<String>::None);
 
     let on_submit = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
@@ -88,10 +89,9 @@ pub fn Register() -> impl IntoView {
 #[component]
 pub fn UserProfile() -> impl IntoView {
     let params = use_params_map();
-    let username =
-        move || params.with(|params| params.get("username").cloned().unwrap_or_default());
+    let username = move || params.with(|params| params.get("username").unwrap_or_default());
 
-    let user = create_resource(username, |u| async move {
+    let user = local_resource(username, |u| async move {
         get_or::<Option<User>>(&format!("/api/v1/users/{}", u), None).await
     });
 
@@ -108,8 +108,8 @@ pub fn UserProfile() -> impl IntoView {
                             <p>"Email: " {u.email.unwrap_or("Hidden".to_string())}</p>
                             <UserHeatmap/>
                         </div>
-                    }.into_view(),
-                    _ => view! { <p>"User not found"</p> }.into_view()
+                    }.into_any(),
+                    _ => view! { <p>"User not found"</p> }.into_any()
                 }}
             </Suspense>
         </div>
@@ -119,9 +119,8 @@ pub fn UserProfile() -> impl IntoView {
 #[component]
 pub fn UserHeatmap() -> impl IntoView {
     let params = use_params_map();
-    let username =
-        move || params.with(|params| params.get("username").cloned().unwrap_or_default());
-    let data = create_resource(username, |u| async move {
+    let username = move || params.with(|params| params.get("username").unwrap_or_default());
+    let data = local_resource(username, |u| async move {
         get::<Vec<Contribution>>(&format!("/api/v1/users/{}/heatmap", u)).await
     });
 
@@ -145,9 +144,8 @@ pub fn UserHeatmap() -> impl IntoView {
 #[component]
 pub fn UserFollowers() -> impl IntoView {
     let params = use_params_map();
-    let username =
-        move || params.with(|params| params.get("username").cloned().unwrap_or_default());
-    let users = create_resource(username, |u| async move {
+    let username = move || params.with(|params| params.get("username").unwrap_or_default());
+    let users = local_resource(username, |u| async move {
         get::<Vec<User>>(&format!("/api/v1/users/{}/followers", u)).await
     });
 
@@ -170,9 +168,8 @@ pub fn UserFollowers() -> impl IntoView {
 #[component]
 pub fn UserFollowing() -> impl IntoView {
     let params = use_params_map();
-    let username =
-        move || params.with(|params| params.get("username").cloned().unwrap_or_default());
-    let users = create_resource(username, |u| async move {
+    let username = move || params.with(|params| params.get("username").unwrap_or_default());
+    let users = local_resource(username, |u| async move {
         get::<Vec<User>>(&format!("/api/v1/users/{}/following", u)).await
     });
 
@@ -194,7 +191,7 @@ pub fn UserFollowing() -> impl IntoView {
 
 #[component]
 pub fn UserSettings() -> impl IntoView {
-    let settings = create_resource(
+    let settings = local_resource(
         || (),
         |_| async move {
             get_or::<UserSettingsOption>(
@@ -210,25 +207,25 @@ pub fn UserSettings() -> impl IntoView {
         },
     );
 
-    let (refresh, set_refresh) = create_signal(0);
+    let (refresh, set_refresh) = signal(0);
 
-    let keys = create_resource(
+    let keys = local_resource(
         move || refresh.get(),
         |_| async move { get::<Vec<PublicKey>>("/api/v1/user/keys").await },
     );
 
-    let gpg_keys = create_resource(
+    let gpg_keys = local_resource(
         move || refresh.get(),
         |_| async move { get::<Vec<GpgKey>>("/api/v1/user/gpg_keys").await },
     );
 
-    let (full_name, set_full_name) = create_signal("".to_string());
+    let (full_name, set_full_name) = signal("".to_string());
 
-    let (ssh_title, set_ssh_title) = create_signal("".to_string());
-    let (ssh_key, set_ssh_key) = create_signal("".to_string());
+    let (ssh_title, set_ssh_title) = signal("".to_string());
+    let (ssh_key, set_ssh_key) = signal("".to_string());
 
-    let (gpg_key_content, set_gpg_key_content) = create_signal("".to_string());
-    let (key_error, set_key_error) = create_signal(Option::<String>::None);
+    let (gpg_key_content, set_gpg_key_content) = signal("".to_string());
+    let (key_error, set_key_error) = signal(Option::<String>::None);
 
     let on_add_ssh_key = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();

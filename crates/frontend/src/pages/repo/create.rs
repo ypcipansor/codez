@@ -1,24 +1,25 @@
 //! Repository creation and migration forms.
 
-use crate::api::{get, post_json, WRITE_ERROR};
-use leptos::*;
+use crate::api::{get, local_resource, post_json, WRITE_ERROR};
+use leptos::prelude::*;
+use leptos::task::spawn_local;
 use shared::{CreateRepoOption, GitignoreTemplate, LicenseTemplate};
 
 #[component]
 pub fn CreateRepo() -> impl IntoView {
-    let (name, set_name) = create_signal("".to_string());
-    let (desc, set_desc) = create_signal("".to_string());
-    let (gitignore, set_gitignore) = create_signal("".to_string());
-    let (license, set_license) = create_signal("".to_string());
-    let (private, set_private) = create_signal(false);
-    let (form_error, set_form_error) = create_signal(Option::<String>::None);
+    let (name, set_name) = signal("".to_string());
+    let (desc, set_desc) = signal("".to_string());
+    let (gitignore, set_gitignore) = signal("".to_string());
+    let (license, set_license) = signal("".to_string());
+    let (private, set_private) = signal(false);
+    let (form_error, set_form_error) = signal(Option::<String>::None);
 
-    let licenses = create_resource(
+    let licenses = local_resource(
         || (),
         |_| async move { get::<Vec<LicenseTemplate>>("/api/v1/licenses").await },
     );
 
-    let gitignores = create_resource(
+    let gitignores = local_resource(
         || (),
         |_| async move { get::<Vec<GitignoreTemplate>>("/api/v1/gitignore/templates").await },
     );
@@ -94,7 +95,7 @@ pub fn CreateRepo() -> impl IntoView {
                         <select on:change=move |ev| set_gitignore.set(event_target_value(&ev))>
                             <option value="">"Select .gitignore"</option>
                             <For each=move || list.clone() key=|g| g.name.clone() children=move |g| {
-                                view! { <option value={g.name.clone()}>{g.name}</option> }
+                                view! { <option value={g.name.clone()}>{g.name.clone()}</option> }
                             }/>
                         </select>
                     })}

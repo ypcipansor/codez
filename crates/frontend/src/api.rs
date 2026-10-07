@@ -16,9 +16,29 @@
 //! place rather than being hand-written at every call site.
 
 use gloo_net::http::Request;
+use leptos::prelude::LocalResource;
 use serde::{de::DeserializeOwned, Serialize};
+use std::future::Future;
 
 pub const BASE_URL: &str = "/api/v1";
+
+/// Reactive async resource for client-side rendering.
+///
+/// `LocalResource` never has to cross a thread boundary, so unlike `Resource`
+/// it accepts a non-`Send` future, which is what `gloo_net` request futures
+/// are. `source` is tracked reactively; when it yields a new value the
+/// `fetcher` runs again.
+pub fn local_resource<S, T, Fut>(
+    source: impl Fn() -> S + 'static,
+    fetcher: impl Fn(S) -> Fut + 'static,
+) -> LocalResource<T>
+where
+    S: PartialEq + 'static,
+    T: 'static,
+    Fut: Future<Output = T> + 'static,
+{
+    LocalResource::new(move || fetcher(source()))
+}
 
 /// Build an absolute API URL from a path relative to `/api/v1`.
 pub fn api_url(path: &str) -> String {
