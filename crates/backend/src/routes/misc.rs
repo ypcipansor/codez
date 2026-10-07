@@ -14,7 +14,7 @@ pub(super) fn misc_routes() -> Router<AppState> {
         .route("/api/v1/licenses", get(list_licenses))
         .route("/api/v1/gitignore/templates", get(list_gitignores))
         .route(
-            "/api/v1/notifications/threads/:id",
+            "/api/v1/notifications/threads/{id}",
             patch(mark_notification_read),
         )
 }
